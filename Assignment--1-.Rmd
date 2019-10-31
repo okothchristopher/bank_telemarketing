@@ -1,0 +1,184 @@
+---
+title: "Bank Telemarketing"
+author: "null"
+date: "null"
+output:
+  html_document: default
+  word_document: default
+---
+
+
+```{r,include= FALSE,echo=FALSE}
+library(ggplot2)
+library(dplyr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(magrittr)
+library(ggthemes)
+set.seed(123)
+```
+
+### **Data Loading and consolidation**
+```{r}
+Data <- read.csv(file.choose())
+#Checking the attributes of the data
+str(Data)
+cols = whichNumerics(data = Data)
+for (i in cols) {
+  Data[,i] = as.numeric(Data[,i])
+}
+```
+##### **Missing value and empty data imputation**
+```{r r,echo=FALSE}
+#Is there any missing values in the data?
+colSums(is.na(Data))
+
+#Is there empty data
+colSums(Data == "")
+```
+There are neither missing values nor empty data in our dataset
+
+###  **Exploratory analysis**
+
+##### **Impact of Marital Status on Successful Telemarketing**
+```{r,echo=FALSE}
+plot(x = Data$MARITAL,
+     y = Data$Y,
+     main = "TELEMARKETING GIVEN MARITAL STATUS",
+     ylab = "SUCCESS",
+     xlab = "MARITAL STATUS",
+     col = c("blue","red"))
+
+```
+
+The proportion of unsuccessful telemarketing is almost similar for all categories that is to say , whether someone is divorced ,married or single , their chances of subscribing to a term deposit is unchanged. 
+Therefore this should not be treated in isolation in developing a marketing strategy.
+
+##### **Impact of Level of Education on telemarketing success**
+```{r,echo=FALSE}
+ggplot(data = Data,aes(x = EDUCATION,fill = Y))+
+  geom_bar()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+theme_pander()+coord_flip()
+```
+From the above plot it is evident that one is more likely to subscribe to a term deposit give that they have university level education , followed by those who have attaained secondary level education and those with proffesional course. This could be due to the fact that the aforementioned have an understanding of the positive personal gain over a specified period , having taken a term deposit. The ones trailing the list are the illiterate further giving ctredence to  the theory that one is more likely to subscribe to a term deposit if they understand the gains associated. Therefore the management should focus more on clarifying the facts .
+##### **Impact of Job type on telemarketing success**
+```{r,echo=FALSE}
+ggplot(data = Data,aes(x = JOB,fill = Y)) + 
+  geom_bar()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+Those with administrative position at their places of work are more likely to take up a term deposit as they tend to have surplus income . The same can be observed for the blue-collar customers. What is more technicians have scored highly because of the nature of their job and perhaps irregularity in the incomes . Thusly the management should focus more effort on the admin, blue-collar and technicians.
+##### **Impact of Personal Loan on telemarketing success**
+```{r,echo=FALSE}
+plot(x = Data$LOAN,y = Data$Y)
+```
+
+##### **Effect  of  Having a Housing loan on telemarketing success**
+```{r,echo=FALSE}
+plot(x = Data$HOUSING,y = Data$Y,col = c("blue","pink"))
+```
+
+The results show that the impact of housing is similar accross . Therefore not a major factor to consider
+##### **Impact of Credit history on telemarketing success**
+```{r,echo=FALSE}
+plot(x = Data$DEFAULTCREDIT,y = Data$Y,col = c("blue","pink"))
+```
+
+##### **Impact of Communication type on telemarketing success**
+```{r,echo=FALSE}
+plot(Data$CONTACT,Data$Y,col = c("grey","pink"))
+```
+
+
+Partition the data into training and testing dataset
+```{r}
+Data %<>% select(-DURATION)
+id <- createDataPartition(Data$Y,times = 1,p = 0.7,list = FALSE)
+train <- Data[id,]
+test <- Data[-id,]
+```
+
+
+#### **Benchmark decision tree**
+
+create benchmark model
+
+```{r,echo=FALSE}
+set.seed(123)
+
+
+benchmark <- rpart(formula = Y~.,
+                   data = train,
+                   method = "class")
+fancyRpartPlot(benchmark)
+```
+
+Our benchmark model is using only two features - nr_employed(number of employees) and poutcome(previous outcome of marketing campaign) for prediction  
+
+
+Let's predict using the benchmark model
+```{r,echo=FALSE}
+benchmark_predict <- predict(object = benchmark,
+                             newdata = train,
+                             type = "class")
+confusionMatrix(benchmark_predict,train$Y)
+```
+The accuracy of our benchmark model is 89.99%.
+
+There is chance of overfitting in Single tree, So I will go for cross validation using n fold techinque
+```{r decision-tree-model, message=FALSE, warning=FALSE}
+set.seed(123)
+model <- function(X = "DATA", n = "number of crossvalidations"){
+  cv.n <- createMultiFolds(train$Y,k = n,times = n)
+  #Control
+  ctrl <- trainControl(method = "repeatedcv", number = n, repeats = n,
+                       index = cv.n)
+                        
+  #Train the model
+  model_validate <- Model_CDT <- train(x = X[,-ncol(X)],
+                                       y = X[,ncol(X)], 
+                                       method = "rpart", 
+                                       tuneLength = 30,
+                                       trControl = ctrl)
+  
+  #plot the model
+  plot <- rpart.plot(model_validate$finalModel,extra = 3,fallen.leaves = T)
+  
+  return(plot)
+  return(model_validate$finalModel)
+  }
+
+
+model_tree <- model(train,5)
+prediction <- predict(object = model_tree$obj,
+                         newdata = train,
+                         type = "class")
+confusionMatrix(prediction,train$Y)
+
+```
+
+Our new tree uses more features for prediction(5) which would suggest that it may be a better model than our initial benchmark model.
+This tree also has a slightly higher accuracy(0.9019) than our benchmark model.
+
+
+```{r Decision-tree-prediction, message=FALSE, warning=FALSE}
+#testing the model
+
+model_predict <- function(X = "DATA"){
+  predictions <- predict(object = model_tree$obj,
+                         newdata = X,
+                         type = "class")
+  confusionMatrix(predictions,test$Y)
+}
+model_predict(test)
+
+
+
+```
+
+Our model has a prediction accuracy of 89.95% on the new dataset. 
+
+This therefore shows that using the model the management is able to choose the type of customers they would mail. Because with the model they are able to select the customers with arttributes which affect positively their chances of taking a term deposit.Thus they can minimize the cost of marketing while at the same time realising maximum telemarketing success.f
